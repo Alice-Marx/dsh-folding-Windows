@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 import { chromium } from 'playwright'
-import { startPreview, navigation } from '../tools/preview.mjs'
+import { startPreview, navigation, workspace } from '../tools/preview.mjs'
 
 let browser
 let preview
@@ -32,6 +32,8 @@ async function withPage(run, query = '') {
 }
 
 const nav = page => page.locator('.sidebar-root > nav[aria-label="全局面板"]')
+const toolsControls = page => page.locator('.sidebar-root > button[aria-controls="global-panels"]')
+const workspaceRegion = page => page.locator('.sidebar-root > .region')
 async function toggle(page) {
   await page.waitForFunction(() => {
     const region = document.querySelector('.sidebar-root > nav[aria-label="全局面板"]')
@@ -49,6 +51,26 @@ async function expectExpanded(page, expanded) {
       && (getComputedStyle(region).display !== 'none') === expected
   }, expanded)
   assert.equal(await button.getAttribute('aria-expanded'), String(expanded))
+}
+
+async function workspaceToggle(page) {
+  await page.waitForFunction(() => {
+    const region = document.querySelector('.sidebar-root > .region')
+    return region?.id && [...document.querySelectorAll('.sidebar-root > button[aria-controls]')].some(button => button.getAttribute('aria-controls') === region.id)
+  })
+  const regionId = await workspaceRegion(page).getAttribute('id')
+  return page.locator(`.sidebar-root > button[aria-controls=${JSON.stringify(regionId)}]`)
+}
+
+async function expectWorkspaceExpanded(page, expanded) {
+  const control = await workspaceToggle(page)
+  await page.waitForFunction(expected => {
+    const region = document.querySelector('.sidebar-root > .region')
+    const button = [...document.querySelectorAll('.sidebar-root > button[aria-controls]')].find(item => item.getAttribute('aria-controls') === region?.id)
+    return button?.getAttribute('aria-expanded') === String(expected)
+      && (getComputedStyle(region).display !== 'none') === expected
+  }, expanded)
+  assert.equal(await control.getAttribute('aria-expanded'), String(expanded))
 }
 
 test('folds the real flex navigation, keeps workspace visible, and preserves panel clicks', async () => {
@@ -101,7 +123,7 @@ test('a similarly named navigation outside the sidebar remains untouched', async
 
 test('navigation can appear late, update its count, and remount without duplicate controls', async () => {
   await withPage(async page => {
-    assert.equal(await page.locator('.sidebar-root button[aria-controls]').count(), 0)
+    assert.equal(await toolsControls(page).count(), 0)
     await page.locator('.region').evaluate((region, markup) => region.insertAdjacentHTML('beforebegin', markup), navigation())
     const control = await toggle(page)
     assert.match(await control.textContent(), /7/)
@@ -116,7 +138,7 @@ test('navigation can appear late, update its count, and remount without duplicat
     await expectExpanded(page, false)
     await nav(page).evaluate((element, markup) => { element.outerHTML = markup }, navigation())
     await expectExpanded(page, false)
-    assert.equal(await page.locator('.sidebar-root button[aria-controls]').count(), 1)
+    assert.equal(await toolsControls(page).count(), 1)
     assert.match(await (await toggle(page)).textContent(), /7/)
   }, '?empty=1')
 })
@@ -145,7 +167,7 @@ test('replacement install is unique and an old disposer cannot tear down the rep
       window.disposeFolding = window.installFolding()
       window.oldDisposeFolding()
     })
-    assert.equal(await page.locator('.sidebar-root button[aria-controls]').count(), 1)
+    assert.equal(await toolsControls(page).count(), 1)
     await (await toggle(page)).click()
     await expectExpanded(page, true)
   })
@@ -175,6 +197,11 @@ test('blocked localStorage does not prevent folding, reopening, or disposal', as
       window.disposeFolding = window.installFolding()
     })
     await expectExpanded(page, false)
+    await expectWorkspaceExpanded(page, true)
+    await (await workspaceToggle(page)).click()
+    await expectWorkspaceExpanded(page, false)
+    await (await workspaceToggle(page)).click()
+    await expectWorkspaceExpanded(page, true)
     await (await toggle(page)).click()
     await expectExpanded(page, true)
     await (await toggle(page)).click()
@@ -248,6 +275,197 @@ test('a cross-tab fold moves focus out of hidden entries and keeps them out of T
     assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-controls')), await nav(page).getAttribute('id'))
     await page.keyboard.press('Tab')
     assert.equal(await page.evaluate(() => document.activeElement.closest('.sidebar-root > nav') !== null), false)
+    await writer.close()
+  })
+})
+
+test('workspace folding hides the complete browser, preserves sessions, and keeps settings at the foot', async () => {
+  await withPage(async page => {
+    await expectWorkspaceExpanded(page, true)
+    const control = await workspaceToggle(page)
+    assert.equal(await control.getAttribute('data-dsh-folding-section'), 'workspaces')
+    assert.match(await control.textContent(), /工作区/)
+    const before = await workspaceRegion(page).evaluate(element => element.innerHTML)
+    const settingsBottom = await page.locator('.foot-area').evaluate(element => element.getBoundingClientRect().bottom)
+    await control.click()
+    await expectWorkspaceExpanded(page, false)
+    assert.equal(await page.getByRole('button', { name: '搜索会话', exact: true }).isVisible(), false)
+    assert.equal(await page.getByRole('button', { name: '添加工作区', exact: true }).isVisible(), false)
+    assert.equal(await page.locator('.session-row').first().isVisible(), false)
+    assert.equal(await page.getByRole('button', { name: '设置', exact: true }).isVisible(), true)
+    assert.equal(await page.locator('.foot-area').evaluate(element => element.getBoundingClientRect().bottom), settingsBottom)
+    await control.focus()
+    await page.keyboard.press('Enter')
+    await expectWorkspaceExpanded(page, true)
+    assert.equal(await workspaceRegion(page).evaluate(element => element.innerHTML), before)
+    await page.locator('[data-session="today"]').click()
+    assert.deepEqual(await page.evaluate(() => window.clickedSessions), ['today'])
+    await control.focus()
+    await page.keyboard.press('Space')
+    await expectWorkspaceExpanded(page, false)
+  })
+})
+
+test('workspace and tools keep independent persisted state and honor the legacy tools key', async () => {
+  await withPage(async page => {
+    await page.evaluate(() => {
+      localStorage.setItem('dsh-folding-windows:collapsed:v1', 'false')
+      window.disposeFolding = window.installFolding()
+    })
+    await expectExpanded(page, true)
+    await expectWorkspaceExpanded(page, true)
+    await (await workspaceToggle(page)).click()
+    await expectWorkspaceExpanded(page, false)
+    await expectExpanded(page, true)
+    await page.evaluate(() => { window.disposeFolding(); window.disposeFolding = window.installFolding() })
+    await expectWorkspaceExpanded(page, false)
+    await expectExpanded(page, true)
+    await (await toggle(page)).click()
+    await expectExpanded(page, false)
+    await expectWorkspaceExpanded(page, false)
+    await (await workspaceToggle(page)).click()
+    await expectWorkspaceExpanded(page, true)
+    await expectExpanded(page, false)
+    await page.reload()
+    await page.evaluate(() => { window.disposeFolding = window.installFolding() })
+    await expectExpanded(page, false)
+    await expectWorkspaceExpanded(page, true)
+    await (await workspaceToggle(page)).click()
+    await (await toggle(page)).click()
+    await page.reload()
+    await page.evaluate(() => { window.disposeFolding = window.installFolding() })
+    await expectExpanded(page, true)
+    await expectWorkspaceExpanded(page, false)
+  }, '?no-auto=1')
+})
+
+test('workspace control works without global panels and does not touch a workspace outside the sidebar', async () => {
+  await withPage(async page => {
+    assert.equal(await nav(page).count(), 0)
+    await expectWorkspaceExpanded(page, true)
+    await page.locator('main').evaluate((element, markup) => element.insertAdjacentHTML('beforeend', markup.replace('id="workspace-region"', 'id="unrelated-workspace"')), workspace())
+    const unrelated = await page.locator('#unrelated-workspace').evaluate(element => element.outerHTML)
+    await (await workspaceToggle(page)).click()
+    await expectWorkspaceExpanded(page, false)
+    assert.equal(await page.locator('#unrelated-workspace').isVisible(), true)
+    assert.equal(await page.locator('#unrelated-workspace').evaluate(element => element.outerHTML), unrelated)
+    assert.equal(await page.locator('main button[aria-controls]').count(), 0)
+    assert.equal(await page.locator('.sidebar-root > button[aria-controls]').count(), 1)
+  }, '?empty=1')
+})
+
+test('workspace can mount late and remount with its remembered state without duplicate controls', async () => {
+  await withPage(async page => {
+    await workspaceRegion(page).evaluate(element => element.remove())
+    await page.evaluate(() => { window.disposeFolding = window.installFolding() })
+    assert.equal(await page.locator('.sidebar-root > button[data-dsh-folding-section="workspaces"]').count(), 0)
+    await page.locator('.foot-area').evaluate((element, markup) => element.insertAdjacentHTML('beforebegin', markup), workspace())
+    await expectWorkspaceExpanded(page, true)
+    await (await workspaceToggle(page)).click()
+    await expectWorkspaceExpanded(page, false)
+    await workspaceRegion(page).evaluate((element, markup) => { element.outerHTML = markup }, workspace())
+    await expectWorkspaceExpanded(page, false)
+    assert.equal(await page.locator('.sidebar-root > button[data-dsh-folding-section="workspaces"]').count(), 1)
+    await page.evaluate(() => {
+      const oldDispose = window.disposeFolding
+      window.disposeFolding = window.installFolding()
+      oldDispose()
+    })
+    await expectWorkspaceExpanded(page, false)
+    assert.equal(await page.locator('.sidebar-root > button[data-dsh-folding-section="workspaces"]').count(), 1)
+    await (await workspaceToggle(page)).click()
+    await expectWorkspaceExpanded(page, true)
+  }, '?no-auto=1')
+})
+
+test('workspace disposal restores preexisting attributes and generated ids exactly', async () => {
+  await withPage(async page => {
+    const original = await workspaceRegion(page).evaluate(element => {
+      element.id = ''
+      element.setAttribute('aria-hidden', 'false')
+      element.setAttribute('style', 'color: rgb(1, 2, 3);')
+      return { attributes: [...element.attributes].map(attribute => [attribute.name, attribute.value]).sort(), html: element.innerHTML }
+    })
+    await page.evaluate(() => { window.disposeFolding = window.installFolding() })
+    await expectWorkspaceExpanded(page, true)
+    assert.ok(await workspaceRegion(page).getAttribute('id'))
+    await (await workspaceToggle(page)).click()
+    await expectWorkspaceExpanded(page, false)
+    await page.evaluate(() => { window.disposeFolding() })
+    assert.equal(await page.locator('.sidebar-root > button[aria-controls]').count(), 0)
+    assert.deepEqual(await workspaceRegion(page).evaluate(element => ({ attributes: [...element.attributes].map(attribute => [attribute.name, attribute.value]).sort(), html: element.innerHTML })), original)
+    assert.equal(await workspaceRegion(page).evaluate(element => getComputedStyle(element).display), 'flex')
+    assert.equal(await page.locator('.workspace-tree').isVisible(), true)
+  }, '?no-auto=1')
+})
+
+test('workspace state survives the whole sidebar rail and restoring its wide browser', async () => {
+  await withPage(async page => {
+    await expectWorkspaceExpanded(page, true)
+    await (await workspaceToggle(page)).click()
+    await expectWorkspaceExpanded(page, false)
+    await page.locator('#frame').evaluate(element => element.setAttribute('data-sidebar-collapsed', 'true'))
+    await page.waitForFunction(() => {
+      const button = document.querySelector('.sidebar-root > button[data-dsh-folding-section="workspaces"]')
+      return button && getComputedStyle(button).display === 'none'
+    })
+    await workspaceRegion(page).evaluate(element => {
+      element.innerHTML = '<div class="workspace-browser"><div class="workspace-header"><button type="button" aria-label="添加工作区">＋</button></div><div class="workspace-search"><button type="button" aria-label="搜索会话">⌕</button></div><div class="workspace-list-area"></div></div>'
+    })
+    assert.equal(await (await workspaceToggle(page)).isVisible(), false)
+    await workspaceRegion(page).evaluate((element, markup) => { element.outerHTML = markup }, workspace())
+    await page.locator('#frame').evaluate(element => element.removeAttribute('data-sidebar-collapsed'))
+    await expectWorkspaceExpanded(page, false)
+    assert.equal(await (await workspaceToggle(page)).isVisible(), true)
+    await (await workspaceToggle(page)).click()
+    await expectWorkspaceExpanded(page, true)
+    await expectExpanded(page, false)
+  })
+})
+
+test('recognizes English workspaces and the flat Sessions view independently of global panels', async () => {
+  for (const flat of [false, true]) {
+    await withPage(async page => {
+      await page.evaluate(() => {
+        document.documentElement.lang = 'en'
+        document.querySelector('.new-session').setAttribute('aria-label', 'New session')
+      })
+      await workspaceRegion(page).evaluate((element, markup) => { element.outerHTML = markup }, workspace({ english: true, flat }))
+      await page.evaluate(() => { window.disposeFolding = window.installFolding() })
+      await expectWorkspaceExpanded(page, true)
+      assert.match(await (await workspaceToggle(page)).textContent(), /Workspaces/)
+      await (await workspaceToggle(page)).click()
+      await expectWorkspaceExpanded(page, false)
+      assert.equal(await page.getByRole('button', { name: 'Search sessions', exact: true }).isVisible(), false)
+      await (await workspaceToggle(page)).click()
+      await expectWorkspaceExpanded(page, true)
+      assert.equal(await page.getByRole('tree', { name: 'Sessions', exact: true }).isVisible(), true)
+    }, '?empty=1&no-auto=1')
+  }
+})
+
+test('a cross-tab workspace fold moves focus to its own control and removes sessions from Tab order', async () => {
+  await withPage(async page => {
+    await expectWorkspaceExpanded(page, true)
+    await (await workspaceToggle(page)).click()
+    await expectWorkspaceExpanded(page, false)
+    const collapsedStorage = await page.evaluate(() => Object.entries(localStorage))
+    assert.ok(collapsedStorage.some(([key]) => key !== 'dsh-folding-windows:collapsed:v1'), 'workspace must persist an independent state')
+    await (await workspaceToggle(page)).click()
+    await expectWorkspaceExpanded(page, true)
+    const writer = await page.context().newPage()
+    await writer.goto(preview.url + '?no-auto=1')
+    await page.bringToFront()
+    await page.locator('[data-session="today"]').focus()
+    assert.equal(await page.evaluate(() => document.activeElement.getAttribute('data-session')), 'today')
+    await writer.evaluate(entries => {
+      for (const [key, value] of entries) localStorage.setItem(key, value)
+    }, collapsedStorage)
+    await expectWorkspaceExpanded(page, false)
+    assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-controls')), await workspaceRegion(page).getAttribute('id'))
+    await page.keyboard.press('Tab')
+    assert.equal(await page.evaluate(() => document.activeElement.closest('.region') !== null), false)
+    await expectExpanded(page, false)
     await writer.close()
   })
 })

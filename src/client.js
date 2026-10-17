@@ -204,6 +204,8 @@ exports.install = function install(doc, win) {
   });
   (doc.head || doc.documentElement).appendChild(style);
 
+  const disposeWorkspaces = installWorkspaceFolding(doc, win);
+
   function queueScan() {
     if (disposed || scheduled) return;
     scheduled = true;
@@ -297,6 +299,7 @@ exports.install = function install(doc, win) {
     const control = doc.createElement('button');
     control.setAttribute('type', 'button');
     control.setAttribute(CONTROL_ATTR, 'true');
+    control.setAttribute('data-dsh-folding-section', 'tools');
     control.setAttribute(EMPTY_ATTR, 'false');
     control.setAttribute(COLUMN_COLLAPSED_ATTR, 'false');
 
@@ -485,6 +488,7 @@ exports.install = function install(doc, win) {
     disposed = true;
     observer.disconnect();
     win.removeEventListener('storage', onStorage);
+    disposeWorkspaces();
 
     for (const record of Array.from(instances.values())) {
       removeRecord(record);

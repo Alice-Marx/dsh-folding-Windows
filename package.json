@@ -1,7 +1,7 @@
 {
   "name": "@ljwei-stak/dsh-folding-windows",
-  "version": "0.1.0",
-  "description": "DSH 侧边栏功能区折叠插件：一键收起全局面板入口，保留项目与会话列表，记住展开状态。",
+  "version": "0.2.0",
+  "description": "DSH 侧边栏折叠插件：功能区和工作区分别展开或收起，各自记住状态。",
   "type": "module",
   "license": "MIT",
   "author": "Alice-Marx",
@@ -13,7 +13,15 @@
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
-  "files": ["entry.js", "lib", "src", "cordis.patch.yml", "icon.svg", "README.md", "LICENSE"],
+  "files": [
+    "entry.js",
+    "lib",
+    "src",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "node scripts/build-client.mjs",
     "check": "node scripts/build-client.mjs --check",
@@ -21,16 +29,41 @@
     "preview": "node tools/preview.mjs",
     "prepack": "npm run build && npm run check"
   },
-  "engines": { "node": "^22.19.0 || >=24.0.0" },
-  "dsh": {
-    "engines": { "dsh": ">=0.2.0-rc.2" },
-    "client": { "platform": "web" },
-    "bundle": { "patch": "./cordis.patch.yml" }
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
   },
-  "repository": { "type": "git", "url": "git+https://github.com/Alice-Marx/dsh-folding-Windows.git" },
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.2.0-rc.2"
+    },
+    "client": {
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Alice-Marx/dsh-folding-Windows.git"
+  },
   "homepage": "https://github.com/Alice-Marx/dsh-folding-Windows#readme",
-  "bugs": { "url": "https://github.com/Alice-Marx/dsh-folding-Windows/issues" },
-  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
-  "keywords": ["dsh", "deepseek", "plugin", "sidebar", "collapse", "windows"],
-  "devDependencies": { "playwright": "1.62.1" }
+  "bugs": {
+    "url": "https://github.com/Alice-Marx/dsh-folding-Windows/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek",
+    "plugin",
+    "sidebar",
+    "collapse",
+    "windows"
+  ],
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
 }
