@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 /** A small offline replica of DSH's public sidebar markup and flex styles. */
-export function fixture({ empty = false, autoInstall = true, pins = false, english = false, tree = false, pending = false } = {}) {
+export function fixture({ empty = false, autoInstall = true, pins = false, english = false, tree = false, pending = false, wrap = false } = {}) {
   return `<!doctype html>
 <html lang="${english ? 'en' : 'zh-CN'}" data-platform="win32" data-windows-titlebar><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -22,7 +22,7 @@ export function fixture({ empty = false, autoInstall = true, pins = false, engli
     <div class="brand" data-window-drag>◈ <span>DeepSeek Harness</span></div>
     <button class="new-session" type="button" aria-label="${english ? 'New session' : '新建会话'}">＋ 新会话</button>
     ${empty ? '' : navigation()}
-    ${workspace({ english })}
+    ${workspace({ english, wrap })}
     <div class="foot-area"><div class="footer-actions"></div><div class="settings-area"><button class="settings" type="button" aria-label="设置">⚙ 设置</button></div></div>
   </div></div>
   <main><h1>侧边栏折叠</h1><p>功能区和工作区可以分别收起、展开，并各自记住状态。</p>
@@ -51,12 +51,15 @@ export function navigation() {
 }
 
 /** SidebarRoot's regionArea seat containing WorkspaceBrowser's header and list. */
-export function workspace({ english = false, flat = false } = {}) {
+export function workspace({ english = false, flat = false, wrap = false } = {}) {
   const title = flat ? (english ? 'Sessions' : '会话') : (english ? 'Workspaces' : '工作区')
   const search = english ? 'Search sessions' : '搜索会话'
   const view = english ? 'View options' : '视图选项'
   const add = english ? 'Add workspace' : '添加工作区'
-  return `<div class="region" id="workspace-region"><div class="workspace-browser">
+  // DSH mounts the browser inside slot wrappers; `wrap` reproduces that depth.
+  const wrapperOpen = wrap ? '<div class="slot">' : ''
+  const wrapperClose = wrap ? '</div>' : ''
+  return `<div class="region" id="workspace-region">${wrapperOpen}<div class="workspace-browser">
       <div class="workspace-header"><span class="workspace-label">${title}</span>
         <div class="workspace-search"><button type="button" aria-label="${search}" aria-expanded="false">⌕</button><input type="text" placeholder="${search}" tabindex="-1"></div>
         <div class="workspace-actions"><button type="button" aria-label="${view}">☷</button><button type="button" aria-label="${add}">＋</button></div>
@@ -67,7 +70,7 @@ export function workspace({ english = false, flat = false } = {}) {
         <div class="session-row" role="treeitem" data-row-key="session:local" tabindex="-1" aria-selected="false" data-session="local">本地项目</div>
         ${flat ? '' : '</div></div>'}
       </div></div>
-    </div></div>`
+    </div>${wrapperClose}</div>`
 }
 
 /**
@@ -281,6 +284,7 @@ export async function startPreview({ port = 0 } = {}) {
         english: url.searchParams.has('english'),
         tree: url.searchParams.has('tree'),
         pending: url.searchParams.has('pending'),
+        wrap: url.searchParams.has('wrap'),
       }))
     } catch (error) {
       if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })

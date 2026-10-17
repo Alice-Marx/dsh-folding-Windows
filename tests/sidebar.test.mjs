@@ -279,6 +279,19 @@ test('a cross-tab fold moves focus out of hidden entries and keeps them out of T
   })
 })
 
+test('workspace folding still finds the browser when DSH nests it inside slot wrappers', async () => {
+  await withPage(async page => {
+    assert.equal(await page.locator('#workspace-region > .slot > .workspace-browser').count(), 1)
+    await expectWorkspaceExpanded(page, true)
+    const control = await workspaceToggle(page)
+    await control.click()
+    await expectWorkspaceExpanded(page, false)
+    assert.equal(await page.getByRole('button', { name: '搜索会话', exact: true }).isVisible(), false)
+    await control.click()
+    await expectWorkspaceExpanded(page, true)
+  }, '?wrap=1')
+})
+
 test('workspace folding hides the complete browser, preserves sessions, and keeps settings at the foot', async () => {
   await withPage(async page => {
     await expectWorkspaceExpanded(page, true)
@@ -410,7 +423,7 @@ test('workspace state survives the whole sidebar rail and restoring its wide bro
       return button && getComputedStyle(button).display === 'none'
     })
     await workspaceRegion(page).evaluate(element => {
-      element.innerHTML = '<div class="workspace-browser"><div class="workspace-header"><button type="button" aria-label="添加工作区">＋</button></div><div class="workspace-search"><button type="button" aria-label="搜索会话">⌕</button></div><div class="workspace-list-area"></div></div>'
+      element.innerHTML = '<div class="workspace-browser"><div class="workspace-header"><button type="button" aria-label="添加工作区">＋</button></div><div class="workspace-search"><button type="button" aria-label="搜索会话">⌕</button></div><div class="workspace-list-area"><div class="workspace-tree" role="tree" aria-label="会话"></div></div></div>'
     })
     assert.equal(await (await workspaceToggle(page)).isVisible(), false)
     await workspaceRegion(page).evaluate((element, markup) => { element.outerHTML = markup }, workspace())
