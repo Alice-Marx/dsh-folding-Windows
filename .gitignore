@@ -1,0 +1,9 @@
+node_modules/
+dist/
+tmp/
+test-results/
+playwright-report/
+*.log
+.env
+.env.*
+*.tgz

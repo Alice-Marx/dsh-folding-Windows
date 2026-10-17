@@ -1,0 +1,3 @@
+- insert:
+    - id: folding-windows
+      name: '@ljwei-stak/dsh-folding-windows'
