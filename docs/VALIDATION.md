@@ -1,5 +1,19 @@
 # 验证记录
 
+## 0.3.0
+
+验证日期：2026-10-17。
+
+`npm run build`、`npm run check`、`node --check` 通过。47 项测试全部通过（12 项排序控制器单元测试、15 项项目置顶浏览器测试、20 项侧边栏折叠浏览器测试），零失败、零跳过、零未捕获异常。
+
+新增工作区项目置顶：项目行出现图钉按钮，置顶项目按最近置顶在前排列并始终位于普通项目之前，取消置顶恢复记录的普通顺序。排序通过 DSH 原生 `workspaces.insertBefore(id, beforeId)` 完成，偏好保存在当前浏览器，并与两个区域的折叠状态分别持久化。
+
+对照本机 DSH 0.2.1-rc.2 随包代码核对接口：`workspaces.list.getSnapshot()` / `subscribe()`、`workspaces.insertBefore(id, beforeId)`、项目行的 `data-row-key="workspace:<workspaceId>"` 与会话树 `aria-label="会话"/"Sessions"`，无需改动 DSH 本体。
+
+本轮修复三处排序控制器缺陷：等待中的原生调用期间到达的外部排序被误当成本次操作的结果而覆盖；另一标签页清空偏好时只丢弃图钉、保留并回写已知普通顺序；`dispose` 未能真正解绑 `storage` 监听器（`addEventListener` 返回 undefined）。
+
+已生成并查看 `docs/pinned.png`。测试使用系统 Chrome（`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`）运行官方侧边栏结构夹具，并非完整 DSH 桌面应用的端到端测试。
+
 ## 0.2.0
 
 验证日期：2026-10-17。

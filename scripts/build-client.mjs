@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
-const source = ['src/workspaces.js', 'src/client.js']
+const source = ['src/pin-controller.js', 'src/project-pins.js', 'src/workspaces.js', 'src/client.js']
   .map(path => readFileSync(join(root, path), 'utf8').replace(/\r\n/g, '\n'))
   .join('\n')
 const output = `window.__ModuleLoader__.load({ id: ${JSON.stringify(pkg.name)}, factory: (require) => {\n`

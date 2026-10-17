@@ -170,10 +170,21 @@ exports.apply = function apply(ctx) {
     throw new TypeError(PACKAGE_NAME + ': ctx.effect is required');
   }
 
-  return ctx.effect(function installEffect() {
+  const dispose = ctx.effect(function installEffect() {
     return exports.install(document, window);
   }, 'folding-windows: sidebar');
+
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['workspaces'], function (owner) {
+      owner.effect(function () {
+        return exports.installProjectPinning(document, window, owner.get('workspaces'));
+      }, 'folding-windows: project pinning');
+    });
+  }
+  return dispose;
 };
+
+exports.installProjectPinning = installProjectPinning;
 
 exports.install = function install(doc, win) {
   if (!doc || !win) {
