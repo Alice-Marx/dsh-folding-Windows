@@ -3,29 +3,58 @@
 让 DeepSeek Harness（DSH）侧边栏的功能区和工作区分别展开或收起，各自记住状态。
 支持在工作区内置顶项目，并通过 DSH 的原生排序保存项目顺序。
 
+**DSH 插件类别：** 用户界面与体验（UI/UX）
+
+**许可证：** [MIT](LICENSE)
+
 ![默认收起后的独立预览](https://raw.githubusercontent.com/Alice-Marx/dsh-folding-Windows/main/docs/folded.png)
 
-[查看展开效果](https://raw.githubusercontent.com/Alice-Marx/dsh-folding-Windows/main/docs/expanded.png)
+## 截图
 
-[查看工作区收起效果](https://raw.githubusercontent.com/Alice-Marx/dsh-folding-Windows/main/docs/workspaces-folded.png)
-
-[查看项目置顶效果](https://raw.githubusercontent.com/Alice-Marx/dsh-folding-Windows/main/docs/pinned.png)
+- [功能区展开](https://raw.githubusercontent.com/Alice-Marx/dsh-folding-Windows/main/docs/expanded.png)
+- [工作区收起](https://raw.githubusercontent.com/Alice-Marx/dsh-folding-Windows/main/docs/workspaces-folded.png)
+- [项目置顶](https://raw.githubusercontent.com/Alice-Marx/dsh-folding-Windows/main/docs/pinned.png)
 
 ## 安装
 
-在 DSH 的「插件」页面添加 npm 包：
-
-```text
-@ljwei-stak/dsh-folding-windows
-```
-
-也可以使用官方命令行：
+需要已安装可运行的 DSH CLI 和 pnpm。在终端运行以下命令，将插件安装到 DSH 的 Web 配置：
 
 ```sh
-dsh --profile your-profile plugin add @ljwei-stak/dsh-folding-windows@latest
+dsh plugin --profile web add @ljwei-stak/dsh-folding-windows
+dsh --profile web
 ```
 
-将 `your-profile` 替换为实际 DSH 配置名；也可用此命令更新已有版本。安装并启用后刷新 DSH 界面。插件基于 DSH 0.2.0-rc.2 / 0.2.1-rc.2 的侧边栏结构实现，适用于 Windows 桌面端和相同界面的 Web 端。
+如果希望直接从 GitHub 源码安装：
+
+```sh
+dsh plugin --profile web add github:Alice-Marx/dsh-folding-Windows
+dsh --profile web
+```
+
+将 `web` 替换为使用 Web 界面的其他配置名。重新启动 DSH Web 配置后插件生效；更新或卸载可使用 `dsh plugin --profile web update @ljwei-stak/dsh-folding-windows` 或 `dsh plugin --profile web remove @ljwei-stak/dsh-folding-windows`。
+
+## 支持的配置
+
+- 安装目标：DSH Web 配置（例如 `web`）；通过 DSH 的插件管理命令安装后，由 DSH 更新该配置的依赖清单和 Bundle 列表。
+- 插件清单：根目录 [`package.json`](package.json) 声明包名、版本、许可证、最低 DSH 版本及 Web 客户端平台。
+- Bundle 配置：[`cordis.patch.yml`](cordis.patch.yml) 将插件的客户端模块加入 DSH 配置。
+- 无需新增配置文件、环境变量或 API 密钥。折叠状态和项目置顶偏好按浏览器配置保存在 `localStorage`；清除该站点数据会重置这些偏好。
+
+插件入口导出 `apply(ctx)`，在 DSH 的效果生命周期中安装客户端增强；项目置顶通过 DSH 注入的 `workspaces` 服务调用原生排序能力。
+
+## 权限与数据
+
+- 读取并调整 DSH Web 界面的侧边栏 DOM，添加折叠按钮和样式，并观察界面节点变化以适配动态加载。
+- 通过浏览器 `localStorage` 保存两个区域的折叠状态和项目置顶偏好；通过 DSH `workspaces` 服务调整项目顺序。
+- 此版本不发起网络请求，不访问文件系统、命令行、环境变量或凭据，也不向外部服务发送数据。
+- 停用或卸载并刷新后，插件移除自身样式与按钮、恢复被隐藏的区域；项目顺序保留在 DSH 中。
+
+## 兼容性
+
+- `package.json` 声明的目标为 DSH `>=0.2.0-rc.2`，客户端平台为 `web`。
+- 实测环境包括 DSH Web `0.2.1-rc.2`；针对 `0.2.0-rc.2` 和 `0.2.1-rc.2` 的侧边栏结构也有浏览器夹具验证记录。
+- 适用于 Windows 上的 DSH Web 界面及使用相同 Web 界面的部署。不适用于没有 Web 客户端界面的 headless 或 TUI 配置。
+- 插件依赖 DSH Web 侧边栏的语义标签和 DOM 结构；若上游调整这些结构，插件可能需要更新适配。
 
 ## 使用
 
