@@ -52,6 +52,7 @@ dsh --profile web
 ## 兼容性
 
 - `package.json` 声明的目标为 DSH `>=0.2.0-rc.2`，客户端平台为 `web`。
+- 安装运行要求 Node.js `^22.19.0 || >=24.0.0`（与 `package.json` 的 `engines.node` 一致）。
 - 实测环境包括 DSH Web `0.2.1-rc.2`；针对 `0.2.0-rc.2` 和 `0.2.1-rc.2` 的侧边栏结构也有浏览器夹具验证记录。
 - 适用于 Windows 上的 DSH Web 界面及使用相同 Web 界面的部署。不适用于没有 Web 客户端界面的 headless 或 TUI 配置。
 - 插件依赖 DSH Web 侧边栏的语义标签和 DOM 结构；若上游调整这些结构，插件可能需要更新适配。
