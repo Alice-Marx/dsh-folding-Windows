@@ -1,5 +1,7 @@
 # dsh-folding-Windows
 
+[![已收录至 dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/alice-marx/dsh-folding-windows)
+
 让 DeepSeek Harness（DSH）侧边栏的功能区和工作区分别展开或收起，各自记住状态。
 支持在工作区内置顶项目，并通过 DSH 的原生排序保存项目顺序。
 
