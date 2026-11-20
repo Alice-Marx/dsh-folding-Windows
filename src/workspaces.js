@@ -7,23 +7,14 @@ function installWorkspaceFolding(doc, win) {
   const HIDDEN_ATTR = 'data-dsh-folding-workspaces-hidden';
   const STYLE_ATTR = 'data-dsh-folding-workspaces-style';
   const TOGGLE_SELECTOR = 'button[data-dsh-folding-control][data-dsh-folding-section="workspaces"]';
-  const NEW_SESSION_LABELS = ['新建会话', 'New session'];
-  const SEARCH_LABELS = ['搜索会话', 'Search sessions'];
-  const SESSION_TREE_LABELS = ['会话', 'Sessions'];
 
   const records = new Map();
   let collapsed = false;
   let disposed = false;
   let scanScheduled = false;
   let idCounter = 0;
-
-  function isDiv(el) {
-    return !!el && el.nodeType === 1 && el.tagName === 'DIV';
-  }
-
-  function isButton(el) {
-    return !!el && el.nodeType === 1 && el.tagName === 'BUTTON';
-  }
+  let styleElement = null;
+  let observer = null;
 
   function setAttrIfChanged(el, name, value) {
     if (el && el.getAttribute(name) !== value) {
@@ -76,110 +67,53 @@ function installWorkspaceFolding(doc, win) {
       style.setAttribute(STYLE_ATTR, '');
       (doc.head || doc.documentElement).appendChild(style);
     }
+    // The heading folds the browser it heads; the browser keeps its own markup.
     style.textContent =
       'button[data-dsh-folding-control][data-dsh-folding-section="workspaces"]{flex:none;}' +
-      'button[data-dsh-folding-control][data-dsh-folding-section="workspaces"][aria-expanded="false"]{margin-bottom:auto;}' +
-      '[data-dsh-folding-workspaces-hidden="true"]{display:none!important;}';
+      '[' + HIDDEN_ATTR + '="true"]{display:none!important;}';
     return style;
-  }
-
-  function isSearchButton(el) {
-    if (!isButton(el)) return false;
-    return SEARCH_LABELS.indexOf(el.getAttribute('aria-label')) !== -1;
-  }
-
-  function findSearchButton(scope) {
-    if (!scope || typeof scope.querySelectorAll !== 'function') return null;
-    const buttons = scope.querySelectorAll('button[aria-label]');
-    for (let i = 0; i < buttons.length; i++) {
-      if (isSearchButton(buttons[i])) return buttons[i];
-    }
-    return null;
   }
 
   function detectLanguage(searchButton) {
     return searchButton && searchButton.getAttribute('aria-label') === '搜索会话' ? 'zh' : 'en';
   }
 
-  function findSessionTree(scope) {
-    if (!scope || typeof scope.querySelectorAll !== 'function') return null;
-    const trees = scope.querySelectorAll('[role="tree"]');
-    let fallback = null;
-    for (let i = 0; i < trees.length; i++) {
-      const label = trees[i].getAttribute('aria-label');
-      if (label === SESSION_TREE_LABELS[0] || label === SESSION_TREE_LABELS[1]) return trees[i];
-      if (!fallback) fallback = trees[i];
-    }
-    return fallback;
-  }
-
-  function findBrowser(seat) {
-    const searchButton = findSearchButton(seat);
-    if (!searchButton) return null;
-    // DSH renders the browser inside slot wrappers whose depth is not part of
-    // its public contract, so the session tree — not a child layout — proves
-    // this seat owns the workspace area.
-    if (!findSessionTree(seat)) return null;
-    return { searchButton: searchButton };
-  }
-
-  function findRoots() {
-    const roots = [];
-    const buttons = doc.querySelectorAll('button[aria-label]');
-    for (let i = 0; i < buttons.length; i++) {
-      const button = buttons[i];
-      if (NEW_SESSION_LABELS.indexOf(button.getAttribute('aria-label')) === -1) continue;
-
-      const root = button.parentElement;
-      if (!isDiv(root)) continue;
-
-      const column = root.parentElement;
-      if (!isDiv(column)) continue;
-
-      const frame = column.parentElement;
-      if (!isDiv(frame)) continue;
-      if (frame.firstElementChild !== column) continue;
-
-      if (roots.indexOf(root) === -1) roots.push(root);
-    }
-    return roots;
-  }
-
   function generateUniqueId() {
     let id;
     do {
       idCounter += 1;
-      id = 'dsh-folding-workspaces-seat-' + idCounter;
+      id = 'dsh-folding-workspaces-browser-' + idCounter;
     } while (doc.getElementById(id));
     return id;
   }
 
-  function ensureSeatId(record) {
-    const seat = record.seat;
-    const existing = seat.getAttribute('id');
+  function ensureBrowserId(record) {
+    const browser = record.browser;
+    const existing = browser.getAttribute('id');
     if (existing) return existing;
 
     if (record.generatedId && !doc.getElementById(record.generatedId)) {
-      seat.setAttribute('id', record.generatedId);
+      browser.setAttribute('id', record.generatedId);
       return record.generatedId;
     }
 
     const id = generateUniqueId();
     record.generatedId = id;
-    seat.setAttribute('id', id);
+    browser.setAttribute('id', id);
     return id;
   }
 
-  function createRecord(root, appFrame, seat, browserInfo) {
+  function createRecord(workspace) {
+    const browser = workspace.browser;
     const record = {
-      root: root,
-      appFrame: appFrame,
-      seat: seat,
-      searchButton: browserInfo.searchButton,
-      language: detectLanguage(browserInfo.searchButton),
+      browser: browser,
+      seat: workspace.seat,
+      searchButton: workspace.searchButton,
+      language: detectLanguage(workspace.searchButton),
       toggle: null,
-      oldId: seat.getAttribute('id'),
-      oldHidden: seat.getAttribute(HIDDEN_ATTR),
+      rail: false,
+      oldId: browser.getAttribute('id'),
+      oldHidden: browser.getAttribute(HIDDEN_ATTR),
       generatedId: null,
       handleClick: null
     };
@@ -225,6 +159,15 @@ function installWorkspaceFolding(doc, win) {
     record.toggle = toggle;
   }
 
+  function mountToggle(record) {
+    const toggle = record.toggle;
+    const seat = record.seat;
+    if (!toggle || !seat || typeof seat.insertBefore !== 'function') return;
+    if (toggle.parentNode === seat && toggle.nextElementSibling === record.browser) return;
+    const anchor = record.browser.parentNode === seat ? record.browser : seat.firstElementChild;
+    seat.insertBefore(toggle, anchor);
+  }
+
   function ensureToggle(record) {
     let toggle = record.toggle;
     if (toggle && (!toggle.isConnected || toggle.getAttribute('data-dsh-folding-section') !== 'workspaces')) {
@@ -233,25 +176,21 @@ function installWorkspaceFolding(doc, win) {
     }
     if (!toggle) {
       createToggle(record);
-      toggle = record.toggle;
     }
-    if (toggle.parentNode !== record.root || toggle.nextSibling !== record.seat) {
-      record.root.insertBefore(toggle, record.seat);
-    }
+    mountToggle(record);
   }
 
   function applyRecord(record) {
-    const seat = record.seat;
+    const browser = record.browser;
     const toggle = record.toggle;
-    if (!seat.isConnected || !toggle || !toggle.isConnected) return;
+    if (!browser.isConnected || !toggle || !toggle.isConnected) return;
 
-    if (toggle.parentNode !== record.root || toggle.nextSibling !== seat) {
-      record.root.insertBefore(toggle, seat);
-    }
+    mountToggle(record);
 
-    const seatId = ensureSeatId(record);
-    setAttrIfChanged(toggle, 'aria-controls', seatId);
+    const browserId = ensureBrowserId(record);
+    setAttrIfChanged(toggle, 'aria-controls', browserId);
     setAttrIfChanged(toggle, 'aria-expanded', collapsed ? 'false' : 'true');
+    setAttrIfChanged(toggle, 'data-dsh-folding-column-collapsed', record.rail ? 'true' : 'false');
     setAttrIfChanged(
       toggle,
       'title',
@@ -260,9 +199,6 @@ function installWorkspaceFolding(doc, win) {
         : (collapsed ? 'Expand workspaces' : 'Collapse workspaces')
     );
 
-    const columnCollapsed = !!record.appFrame && record.appFrame.getAttribute('data-sidebar-collapsed') === 'true';
-    setAttrIfChanged(toggle, 'data-dsh-folding-column-collapsed', columnCollapsed ? 'true' : 'false');
-
     const label = toggle.querySelector('[data-dsh-folding-role="label"]');
     setTextIfChanged(label, record.language === 'zh' ? '工作区' : 'Workspaces');
 
@@ -270,9 +206,9 @@ function installWorkspaceFolding(doc, win) {
     setTextIfChanged(arrow, collapsed ? '▸' : '▾');
 
     if (collapsed) {
-      setAttrIfChanged(seat, HIDDEN_ATTR, 'true');
+      setAttrIfChanged(browser, HIDDEN_ATTR, 'true');
     } else {
-      removeAttrIfChanged(seat, HIDDEN_ATTR);
+      removeAttrIfChanged(browser, HIDDEN_ATTR);
     }
   }
 
@@ -287,7 +223,7 @@ function installWorkspaceFolding(doc, win) {
     if (!active || active === doc.body) return;
 
     records.forEach(function (record) {
-      if (record.seat.contains(active)) {
+      if (record.browser.contains(active)) {
         const toggle = record.toggle;
         if (toggle && typeof toggle.focus === 'function') {
           try {
@@ -315,62 +251,52 @@ function installWorkspaceFolding(doc, win) {
     applyAll();
   }
 
-  function restoreSeatAttributes(record) {
-    const seat = record.seat;
-    if (!seat) return;
-    if (record.oldHidden === null) removeAttrIfChanged(seat, HIDDEN_ATTR);
-    else setAttrIfChanged(seat, HIDDEN_ATTR, record.oldHidden);
-    if (record.generatedId && seat.getAttribute('id') === record.generatedId) {
-      if (record.oldId === null) seat.removeAttribute('id');
-      else seat.setAttribute('id', record.oldId);
+  function restoreBrowserAttributes(record) {
+    const browser = record.browser;
+    if (!browser) return;
+    if (record.oldHidden === null) removeAttrIfChanged(browser, HIDDEN_ATTR);
+    else setAttrIfChanged(browser, HIDDEN_ATTR, record.oldHidden);
+    if (record.generatedId && browser.getAttribute('id') === record.generatedId) {
+      if (record.oldId === null) browser.removeAttribute('id');
+      else browser.setAttribute('id', record.oldId);
     }
   }
 
   function removeRecord(record) {
     detachToggle(record);
-    restoreSeatAttributes(record);
-    records.delete(record.seat);
+    restoreBrowserAttributes(record);
+    records.delete(record.browser);
   }
 
   function scan() {
     if (disposed) return;
 
     const seen = new Set();
-    const roots = findRoots();
+    const rail = isSidebarRailMode(doc);
 
-    for (let r = 0; r < roots.length; r++) {
-      const root = roots[r];
-      const column = root.parentElement;
-      const appFrame = column ? column.parentElement : null;
-      const children = Array.from(root.children);
+    for (const root of findSidebarRoots(doc)) {
+      const workspace = findSidebarWorkspace(root);
+      if (!workspace) continue;
 
-      for (let i = 0; i < children.length; i++) {
-        const seat = children[i];
-        if (!isDiv(seat)) continue;
-
-        const browserInfo = findBrowser(seat);
-        if (!browserInfo) continue;
-
-        let record = records.get(seat);
-        if (!record) {
-          record = createRecord(root, appFrame, seat, browserInfo);
-          records.set(seat, record);
-        } else {
-          record.root = root;
-          record.appFrame = appFrame;
-          record.searchButton = browserInfo.searchButton;
-          record.language = detectLanguage(browserInfo.searchButton);
-        }
-
-        seen.add(seat);
-        ensureToggle(record);
-        if (collapsed && seat.contains(doc.activeElement)) moveFocusOutOfSeats();
-        applyRecord(record);
+      let record = records.get(workspace.browser);
+      if (!record) {
+        record = createRecord(workspace);
+        records.set(workspace.browser, record);
+      } else {
+        record.seat = workspace.seat;
+        record.searchButton = workspace.searchButton;
+        record.language = detectLanguage(workspace.searchButton);
       }
+      record.rail = rail;
+
+      seen.add(workspace.browser);
+      ensureToggle(record);
+      if (collapsed && workspace.browser.contains(doc.activeElement)) moveFocusOutOfSeats();
+      applyRecord(record);
     }
 
     Array.from(records.values()).forEach(function (record) {
-      if (!seen.has(record.seat)) {
+      if (!seen.has(record.browser)) {
         removeRecord(record);
       }
     });
@@ -461,13 +387,11 @@ function installWorkspaceFolding(doc, win) {
 
   collapsed = readStoredCollapsed();
 
-  const styleElement = ensureStyle();
+  styleElement = ensureStyle();
 
-  const ObserverCtor = win.MutationObserver || (typeof MutationObserver !== 'undefined' ? MutationObserver : null);
-  const observer = ObserverCtor ? new ObserverCtor(onMutations) : null;
-
-  if (observer) {
-    observer.observe(doc.documentElement || doc, {
+  if (typeof win.MutationObserver === 'function' && doc.documentElement) {
+    observer = new win.MutationObserver(onMutations);
+    observer.observe(doc.documentElement, {
       childList: true,
       subtree: true,
       attributes: true,

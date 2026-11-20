@@ -160,28 +160,26 @@ function installProjectPinning(doc, win, service) {
     return button;
   }
 
-  function getListArea() {
-    currentSearchButton = null;
-    // Structural checks match SidebarRoot without relying on CSS-module names.
-    for (const newSessionBtn of doc.querySelectorAll('button[aria-label="新建会话"], button[aria-label="New session"]')) {
-      const sidebarRoot = newSessionBtn.parentElement;
-      const sidebarColumn = sidebarRoot?.parentElement;
-      if (!sidebarRoot || sidebarRoot.tagName !== 'DIV' || sidebarColumn?.tagName !== 'DIV'
-        || sidebarColumn.parentElement?.firstElementChild !== sidebarColumn) continue;
-      for (const regionArea of sidebarRoot.children) {
-        if (regionArea.tagName !== 'DIV') continue;
-        for (const wsBrowser of regionArea.children) {
-          if (wsBrowser.tagName !== 'DIV') continue;
-          const searchBtn = wsBrowser.querySelector('button[aria-label="搜索会话"], button[aria-label="Search sessions"]');
-          if (!searchBtn) continue;
-          const listArea = Array.from(wsBrowser.children).find(child => child.querySelector('[role="tree"][aria-label="会话"], [role="tree"][aria-label="Sessions"]'));
-          if (!listArea) continue;
-          currentSearchButton = searchBtn;
-          // A separate owned flex child avoids the search pill's clipping.
-          if (noticeEl.parentElement !== wsBrowser) wsBrowser.insertBefore(noticeEl, listArea);
-          return listArea;
-        }
+  // The sidebar's workspace browser, located through DSH's own semantics: the
+  // seat owns the search affordance, and the list area is the seat child that
+  // carries the session tree (the notice must not land inside the search pill).
+  function resolveBrowser() {
+    for (const root of findSidebarRoots(doc)) {
+      const workspace = findSidebarWorkspace(root);
+      if (!workspace) continue;
+
+      let listArea = workspace.sessionTree;
+      while (listArea.parentElement && listArea.parentElement !== workspace.browser) {
+        listArea = listArea.parentElement;
       }
+      if (listArea.parentElement !== workspace.browser) listArea = workspace.browser.firstElementChild;
+
+      return {
+        browser: workspace.browser,
+        searchButton: workspace.searchButton,
+        sessionsTree: workspace.sessionTree,
+        listArea: listArea
+      };
     }
     return null;
   }
@@ -199,8 +197,15 @@ function installProjectPinning(doc, win, service) {
   // ------------------------------
   function updateUI() {
     if (disposed) return;
-    const listArea = getListArea();
-    const sessionsTree = listArea?.querySelector('[role="tree"][aria-label="会话"], [role="tree"][aria-label="Sessions"]');
+    const browser = resolveBrowser();
+    const sessionsTree = browser ? browser.sessionsTree : null;
+    currentSearchButton = browser ? browser.searchButton : null;
+    if (browser) {
+      // A separate owned flex child avoids the search pill's clipping.
+      if (noticeEl.parentElement !== browser.browser) browser.browser.insertBefore(noticeEl, browser.listArea);
+    } else if (noticeEl.parentNode) {
+      noticeEl.parentNode.removeChild(noticeEl);
+    }
     const state = controller.getState();
     const { items, pinnedIds, busy, phase, error } = state;
     const validWorkspaceIds = new Set(items.map(item => item.workspaceId));

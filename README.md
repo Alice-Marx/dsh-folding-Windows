@@ -53,16 +53,16 @@ dsh --profile web
 
 ## 兼容性
 
-- `package.json` 声明的目标为 DSH `>=0.2.0-rc.2`，客户端平台为 `web`。
+- `package.json` 声明的目标为 DSH `>=0.2.2-rc.5`，客户端平台为 `web`。
 - 安装运行要求 Node.js `^22.19.0 || >=24.0.0`（与 `package.json` 的 `engines.node` 一致）。
-- 实测环境包括 DSH Web `0.2.1-rc.2`；针对 `0.2.0-rc.2` 和 `0.2.1-rc.2` 的侧边栏结构也有浏览器夹具验证记录。
+- 实测环境为 DSH `0.2.2-rc.5`；针对该版本侧边栏结构的浏览器夹具验证记录见 [docs/VALIDATION.md](docs/VALIDATION.md)。
 - 适用于 Windows 上的 DSH Web 界面及使用相同 Web 界面的部署。不适用于没有 Web 客户端界面的 headless 或 TUI 配置。
-- 插件依赖 DSH Web 侧边栏的语义标签和 DOM 结构；若上游调整这些结构，插件可能需要更新适配。
+- 插件依赖 DSH Web 侧边栏的语义标签和 DOM 结构；若上游调整这些结构，插件可能需要更新适配。0.2.2-rc.5 把折叠开关移进了它所在区域内部，旧版本侧边栏不再适配。
 
 ## 使用
 
-- 新增「功能区」按钮，点击即可展开或收起插件、自动化任务、任务看板、技能中心、模型路由、SSH、MV 放映室等入口。
-- 新增「工作区」按钮，点击即可展开或收起整个工作区区域，包括其中的搜索、项目和会话列表。
+- 在功能区入口列表顶部新增「功能区」行，点击即可展开或收起插件、自动化任务、任务看板、技能中心、模型路由、SSH、MV 放映室等入口。
+- 在工作区浏览器上方新增「工作区」行，点击即可展开或收起整个工作区浏览器，包括其中的搜索、项目和会话列表。
 - 功能区首次默认收起，工作区首次默认展开；两个区域的状态分别保存在当前浏览器配置中，刷新后保留。
 - 新增或卸载其他插件时，功能入口数量自动更新。
 - 支持 Tab 聚焦及 Enter / 空格操作；收起的入口不会进入 Tab 顺序。
@@ -83,7 +83,7 @@ dsh --profile web
 
 ## 开发与验证
 
-无需运行时依赖，不修改 DSH 本体文件，不发送网络请求。通过官方客户端插件入口加载，使用「全局面板 / Global panels」「新建会话 / New session」「搜索会话 / Search sessions」等语义标签与侧边栏结构定位区域，保留 DSH 原有节点和点击行为。DSH 如果调整这些标签或结构，插件会停止增强，需适配后才能继续折叠。
+无需运行时依赖，不修改 DSH 本体文件，不发送网络请求。通过官方客户端插件入口加载，使用「全局面板 / Global panels」「新建会话 / New session」「搜索会话 / Search sessions」「会话 / Sessions」等语义标签，以及 DSH 自己的 `data-sidebar-toggle`、`data-sidebar-collapsed` 标记定位区域，保留 DSH 原有节点和点击行为。DSH 如果调整这些标签或结构，插件会停止增强，需适配后才能继续折叠。
 
 ```sh
 npm ci
@@ -96,7 +96,7 @@ npm run preview
 
 浏览器测试使用与官方侧边栏结构一致的夹具，覆盖折叠、展开、刷新记忆、动态入口、重挂、重复启用及卸载恢复。预览页面仅用于演示和测试，不是完整 DSH 应用。
 
-源码位于 `src/`，项目排序逻辑和项目行按钮分别位于 `pin-controller.js`、`project-pins.js`。构建将源码合并，包装为 DSH 要求的 `window.__ModuleLoader__.load({ id, factory })` 模块，产物为 `lib/client.js`。
+源码位于 `src/`：`sidebar-anchors.js` 是唯一的侧边栏 DOM 契约（根节点、功能区导航、工作区座位与浏览器的定位规则），`pin-controller.js`、`project-pins.js` 分别是项目排序逻辑和项目行按钮，`workspaces.js` 负责工作区折叠，`client.js` 负责功能区折叠与运行时装配。构建将源码按此顺序合并，包装为 DSH 要求的 `window.__ModuleLoader__.load({ id, factory })` 模块，产物为 `lib/client.js`。
 
 ## 许可
 

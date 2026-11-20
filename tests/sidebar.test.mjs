@@ -31,12 +31,17 @@ async function withPage(run, query = '') {
   }
 }
 
-const nav = page => page.locator('.sidebar-root > nav[aria-label="全局面板"]')
-const toolsControls = page => page.locator('.sidebar-root > button[aria-controls="global-panels"]')
-const workspaceRegion = page => page.locator('.sidebar-root > .region')
+// DSH 0.2.2-rc.5: the tools heading lives inside the navigation it folds, and
+// the workspace heading lives beside the browser it folds.
+const nav = page => page.locator('.sidebar-root nav[aria-label="全局面板"]')
+const toolsControls = page => page.locator('button[data-dsh-folding-control][data-dsh-folding-section="tools"]')
+const panelEntries = page => page.locator('.scroll-area > nav[aria-label="全局面板"] > .panel-entry')
+const workspaceRegion = page => page.locator('#workspace-region')
+const workspaceBrowser = page => page.locator('#workspace-region .workspace-browser')
+const workspaceControls = page => page.locator('button[data-dsh-folding-control][data-dsh-folding-section="workspaces"]')
 async function toggle(page) {
   await page.waitForFunction(() => {
-    const region = document.querySelector('.sidebar-root > nav[aria-label="全局面板"]')
+    const region = document.querySelector('nav[aria-label="全局面板"]')
     return region?.id && [...document.querySelectorAll('button[aria-controls]')].some(button => button.getAttribute('aria-controls') === region.id)
   })
   const regionId = await nav(page).getAttribute('id')
@@ -45,30 +50,31 @@ async function toggle(page) {
 async function expectExpanded(page, expanded) {
   const button = await toggle(page)
   await page.waitForFunction(expected => {
-    const region = document.querySelector('.sidebar-root > nav[aria-label="全局面板"]')
+    const region = document.querySelector('nav[aria-label="全局面板"]')
     const control = [...document.querySelectorAll('button[aria-controls]')].find(item => item.getAttribute('aria-controls') === region?.id)
+    const entry = region?.querySelector('.panel-entry')
     return control?.getAttribute('aria-expanded') === String(expected)
-      && (getComputedStyle(region).display !== 'none') === expected
+      && (entry ? getComputedStyle(entry).display !== 'none' : true) === expected
   }, expanded)
   assert.equal(await button.getAttribute('aria-expanded'), String(expanded))
 }
 
 async function workspaceToggle(page) {
   await page.waitForFunction(() => {
-    const region = document.querySelector('.sidebar-root > .region')
-    return region?.id && [...document.querySelectorAll('.sidebar-root > button[aria-controls]')].some(button => button.getAttribute('aria-controls') === region.id)
+    const browser = document.querySelector('#workspace-region .workspace-browser')
+    return browser?.id && [...document.querySelectorAll('#workspace-region button[aria-controls]')].some(button => button.getAttribute('aria-controls') === browser.id)
   })
-  const regionId = await workspaceRegion(page).getAttribute('id')
-  return page.locator(`.sidebar-root > button[aria-controls=${JSON.stringify(regionId)}]`)
+  const browserId = await workspaceBrowser(page).getAttribute('id')
+  return page.locator(`#workspace-region button[aria-controls=${JSON.stringify(browserId)}]`)
 }
 
 async function expectWorkspaceExpanded(page, expanded) {
   const control = await workspaceToggle(page)
   await page.waitForFunction(expected => {
-    const region = document.querySelector('.sidebar-root > .region')
-    const button = [...document.querySelectorAll('.sidebar-root > button[aria-controls]')].find(item => item.getAttribute('aria-controls') === region?.id)
+    const browser = document.querySelector('#workspace-region .workspace-browser')
+    const button = [...document.querySelectorAll('#workspace-region button[aria-controls]')].find(item => item.getAttribute('aria-controls') === browser?.id)
     return button?.getAttribute('aria-expanded') === String(expected)
-      && (getComputedStyle(region).display !== 'none') === expected
+      && (getComputedStyle(browser).display !== 'none') === expected
   }, expanded)
   assert.equal(await control.getAttribute('aria-expanded'), String(expanded))
 }
@@ -78,10 +84,10 @@ test('folds the real flex navigation, keeps workspace visible, and preserves pan
     await expectExpanded(page, false)
     await (await toggle(page)).click()
     await expectExpanded(page, true)
-    assert.equal(await nav(page).evaluate(element => getComputedStyle(element).display), 'flex')
+    assert.equal(await panelEntries(page).first().evaluate(element => getComputedStyle(element).display), 'flex')
     await (await toggle(page)).click()
     await expectExpanded(page, false)
-    assert.equal(await page.locator('.region').isVisible(), true)
+    assert.equal(await workspaceRegion(page).isVisible(), true)
     assert.equal(await page.getByRole('navigation', { name: '页面目录' }).isVisible(), true)
     await (await toggle(page)).click()
     await expectExpanded(page, true)
@@ -124,7 +130,7 @@ test('a similarly named navigation outside the sidebar remains untouched', async
 test('navigation can appear late, update its count, and remount without duplicate controls', async () => {
   await withPage(async page => {
     assert.equal(await toolsControls(page).count(), 0)
-    await page.locator('.region').evaluate((region, markup) => region.insertAdjacentHTML('beforebegin', markup), navigation())
+    await page.locator('#workspace-region').evaluate((region, markup) => region.insertAdjacentHTML('beforebegin', markup), navigation())
     const control = await toggle(page)
     assert.match(await control.textContent(), /7/)
     await nav(page).evaluate(element => {
@@ -148,7 +154,7 @@ test('whole-sidebar collapse keeps the folding control hidden and retains local 
     await expectExpanded(page, false)
     await page.locator('#frame').evaluate(element => element.setAttribute('data-sidebar-collapsed', 'true'))
     await page.waitForFunction(() => {
-      const region = document.querySelector('.sidebar-root > nav[aria-label="全局面板"]')
+      const region = document.querySelector('nav[aria-label="全局面板"]')
       const control = [...document.querySelectorAll('button[aria-controls]')].find(item => item.getAttribute('aria-controls') === region.id)
       return getComputedStyle(control).display === 'none' || control.closest('[hidden]') !== null
     })
@@ -238,18 +244,18 @@ test('recognizes the official English sidebar navigation', async () => {
   await withPage(async page => {
     await page.evaluate(() => {
       document.documentElement.lang = 'en'
-      document.querySelector('.sidebar-root > nav').setAttribute('aria-label', 'Global panels')
+      document.querySelector('.sidebar-root nav').setAttribute('aria-label', 'Global panels')
       document.querySelector('.new-session').setAttribute('aria-label', 'New session')
       window.disposeFolding = window.installFolding()
     })
-    const region = page.locator('.sidebar-root > nav[aria-label="Global panels"]')
+    const entries = page.locator('.scroll-area > nav[aria-label="Global panels"] > .panel-entry')
     const control = page.locator('button[aria-controls="global-panels"]')
     await control.waitFor()
     assert.equal(await control.getAttribute('aria-expanded'), 'false')
-    assert.equal(await region.evaluate(element => getComputedStyle(element).display), 'none')
+    assert.equal(await entries.first().evaluate(element => getComputedStyle(element).display), 'none')
     await control.click()
     assert.equal(await control.getAttribute('aria-expanded'), 'true')
-    assert.equal(await region.evaluate(element => getComputedStyle(element).display), 'flex')
+    assert.equal(await entries.first().evaluate(element => getComputedStyle(element).display), 'flex')
   }, '?no-auto=1')
 })
 
@@ -274,7 +280,7 @@ test('a cross-tab fold moves focus out of hidden entries and keeps them out of T
     await expectExpanded(page, false)
     assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-controls')), await nav(page).getAttribute('id'))
     await page.keyboard.press('Tab')
-    assert.equal(await page.evaluate(() => document.activeElement.closest('.sidebar-root > nav') !== null), false)
+    assert.equal(await page.evaluate(() => document.activeElement.closest('nav[aria-label]') !== null), false)
     await writer.close()
   })
 })
@@ -363,7 +369,7 @@ test('workspace control works without global panels and does not touch a workspa
     assert.equal(await page.locator('#unrelated-workspace').isVisible(), true)
     assert.equal(await page.locator('#unrelated-workspace').evaluate(element => element.outerHTML), unrelated)
     assert.equal(await page.locator('main button[aria-controls]').count(), 0)
-    assert.equal(await page.locator('.sidebar-root > button[aria-controls]').count(), 1)
+    assert.equal(await page.locator('#workspace-region button[aria-controls]').count(), 1)
   }, '?empty=1')
 })
 
@@ -371,21 +377,21 @@ test('workspace can mount late and remount with its remembered state without dup
   await withPage(async page => {
     await workspaceRegion(page).evaluate(element => element.remove())
     await page.evaluate(() => { window.disposeFolding = window.installFolding() })
-    assert.equal(await page.locator('.sidebar-root > button[data-dsh-folding-section="workspaces"]').count(), 0)
+    assert.equal(await page.locator('button[data-dsh-folding-section="workspaces"]').count(), 0)
     await page.locator('.foot-area').evaluate((element, markup) => element.insertAdjacentHTML('beforebegin', markup), workspace())
     await expectWorkspaceExpanded(page, true)
     await (await workspaceToggle(page)).click()
     await expectWorkspaceExpanded(page, false)
     await workspaceRegion(page).evaluate((element, markup) => { element.outerHTML = markup }, workspace())
     await expectWorkspaceExpanded(page, false)
-    assert.equal(await page.locator('.sidebar-root > button[data-dsh-folding-section="workspaces"]').count(), 1)
+    assert.equal(await page.locator('button[data-dsh-folding-section="workspaces"]').count(), 1)
     await page.evaluate(() => {
       const oldDispose = window.disposeFolding
       window.disposeFolding = window.installFolding()
       oldDispose()
     })
     await expectWorkspaceExpanded(page, false)
-    assert.equal(await page.locator('.sidebar-root > button[data-dsh-folding-section="workspaces"]').count(), 1)
+    assert.equal(await page.locator('button[data-dsh-folding-section="workspaces"]').count(), 1)
     await (await workspaceToggle(page)).click()
     await expectWorkspaceExpanded(page, true)
   }, '?no-auto=1')
@@ -393,7 +399,7 @@ test('workspace can mount late and remount with its remembered state without dup
 
 test('workspace disposal restores preexisting attributes and generated ids exactly', async () => {
   await withPage(async page => {
-    const original = await workspaceRegion(page).evaluate(element => {
+    const original = await workspaceBrowser(page).evaluate(element => {
       element.id = ''
       element.setAttribute('aria-hidden', 'false')
       element.setAttribute('style', 'color: rgb(1, 2, 3);')
@@ -401,13 +407,13 @@ test('workspace disposal restores preexisting attributes and generated ids exact
     })
     await page.evaluate(() => { window.disposeFolding = window.installFolding() })
     await expectWorkspaceExpanded(page, true)
-    assert.ok(await workspaceRegion(page).getAttribute('id'))
+    assert.ok(await workspaceBrowser(page).getAttribute('id'))
     await (await workspaceToggle(page)).click()
     await expectWorkspaceExpanded(page, false)
     await page.evaluate(() => { window.disposeFolding() })
-    assert.equal(await page.locator('.sidebar-root > button[aria-controls]').count(), 0)
-    assert.deepEqual(await workspaceRegion(page).evaluate(element => ({ attributes: [...element.attributes].map(attribute => [attribute.name, attribute.value]).sort(), html: element.innerHTML })), original)
-    assert.equal(await workspaceRegion(page).evaluate(element => getComputedStyle(element).display), 'flex')
+    assert.equal(await page.locator('#workspace-region button[aria-controls]').count(), 0)
+    assert.deepEqual(await workspaceBrowser(page).evaluate(element => ({ attributes: [...element.attributes].map(attribute => [attribute.name, attribute.value]).sort(), html: element.innerHTML })), original)
+    assert.equal(await workspaceBrowser(page).evaluate(element => getComputedStyle(element).display), 'flex')
     assert.equal(await page.locator('.workspace-tree').isVisible(), true)
   }, '?no-auto=1')
 })
@@ -419,7 +425,7 @@ test('workspace state survives the whole sidebar rail and restoring its wide bro
     await expectWorkspaceExpanded(page, false)
     await page.locator('#frame').evaluate(element => element.setAttribute('data-sidebar-collapsed', 'true'))
     await page.waitForFunction(() => {
-      const button = document.querySelector('.sidebar-root > button[data-dsh-folding-section="workspaces"]')
+      const button = document.querySelector('button[data-dsh-folding-section="workspaces"]')
       return button && getComputedStyle(button).display === 'none'
     })
     await workspaceRegion(page).evaluate(element => {
@@ -475,9 +481,9 @@ test('a cross-tab workspace fold moves focus to its own control and removes sess
       for (const [key, value] of entries) localStorage.setItem(key, value)
     }, collapsedStorage)
     await expectWorkspaceExpanded(page, false)
-    assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-controls')), await workspaceRegion(page).getAttribute('id'))
+    assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-controls')), await workspaceBrowser(page).getAttribute('id'))
     await page.keyboard.press('Tab')
-    assert.equal(await page.evaluate(() => document.activeElement.closest('.region') !== null), false)
+    assert.equal(await page.evaluate(() => document.activeElement.closest('.workspace-browser') !== null), false)
     await expectExpanded(page, false)
     await writer.close()
   })

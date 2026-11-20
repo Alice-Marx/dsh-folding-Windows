@@ -1,5 +1,19 @@
 # 验证记录
 
+## 0.3.2
+
+验证日期：2026-11-20。
+
+修复升级到 DSH `0.2.2-rc.5` 后插件完全失效的问题。根因是侧边栏结构变化：0.2.2 把「新建会话」行、功能区导航和工作区浏览器拆进不同层级，根节点是 `节点 > 滚动区网格 > (nav[全局面板], 工作区座位 > 浏览器)`，并且整栏折叠状态改由 AppFrame 的 `data-sidebar-collapsed` 表达。旧实现要求「nav 的直接父节点同时含新建会话按钮与工作区座位」，于是功能区折叠、工作区折叠和项目置顶三处定位同时落空，界面表现为插件毫无作用。
+
+现在新增 `src/sidebar-anchors.js` 作为唯一的侧边栏 DOM 契约：只用 DSH 自己的语义（`data-sidebar-toggle`、`data-sidebar-collapsed`、`全局面板/新建会话/搜索会话/会话` 标签）定位根节点、功能区导航、工作区座位与浏览器，并用「祖辈不能再含第二个同类种子」排除页面其他位置的同名导航或浏览器。功能区开关成为功能区列表首行，工作区开关成为工作区浏览器前一行；折叠改为隐藏导航其余子节点、隐藏浏览器本身，不再隐藏容器。
+
+验证：`npm run build`、`npm run check`、`npm test` 通过；48 项测试全绿（12 项排序控制器单元测试、16 项项目置顶浏览器测试、20 项侧边栏折叠浏览器测试），零失败、零跳过、零未捕获异常。浏览器夹具改为 0.2.2-rc.5 结构（logo 行 + `data-sidebar-toggle`、新建会话行、`scroll-area` 网格、`region-area` 座位、`panel-entry` 行），并保留 `?wrap=1` 槽位包裹层与 `?empty=1` 无功能区的回归场景。
+
+对照本机 DSH `0.2.2-rc.5` 随包源码核对：`SidebarRoot.tsx`（nav 与 `regionArea` 分列滚动网格两行、面板行包在 `panelEntry` 内）、`AppFrame.tsx`（`data-sidebar-collapsed` 只在折叠时出现）、`WorkspaceBrowser.tsx` / `Rows.tsx`（会话树 `aria-label` 为「会话」、项目行 `data-row-key="workspace:<id>"` 不变）、`api-workspace-controller`（`list.getSnapshot()` / `subscribe()` 与 `insertBefore(id, beforeId?)` 签名不变）；并在随包客户端产物中确认上述标记确实被打包。已重新生成 `docs/folded.png`、`docs/expanded.png`、`docs/workspaces-folded.png`、`docs/pinned.png` 并逐一查看：折叠后功能区只剩标题行、工作区只剩标题行、设置仍在底部。
+
+仍未覆盖：本轮未在真实 DSH 窗口中做端到端点击（桌面应用 Web 端口需要鉴权，无法自动驱动），行为验证来自与随包源码逐处对照的结构夹具。
+
 ## 0.3.1
 
 验证日期：2026-10-17。

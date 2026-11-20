@@ -4,9 +4,6 @@ const PACKAGE_NAME = '@ljwei-stak/dsh-folding-windows';
 const STORAGE_KEY = 'dsh-folding-windows:collapsed:v1';
 const RUNTIME_KEY = '__dshFoldingWindowsRuntime__';
 
-const NAV_SELECTOR = 'nav[aria-label="全局面板"],nav[aria-label="Global panels"]';
-const NEW_SESSION_LABELS = ['新建会话', 'New session'];
-
 const CONTROL_ATTR = 'data-dsh-folding-control';
 const ROLE_ATTR = 'data-dsh-folding-role';
 const EMPTY_ATTR = 'data-dsh-folding-empty';
@@ -25,19 +22,20 @@ button[data-dsh-folding-control] {
   -webkit-appearance: none;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--dsh-sidebar-label-gap, 10px);
   width: 100%;
   min-width: 0;
-  height: 36px;
-  margin: 0 0 4px;
-  padding: 0 10px;
+  min-height: 32px;
+  flex: none;
+  margin: 0;
+  padding: 5px 8px;
   border: 0;
-  border-radius: var(--dsw-radius-md, 6px);
+  border-radius: var(--dsw-radius-md, 8px);
   background: transparent;
-  color: var(--dsw-alias-label-secondary, var(--dsh-folding-fg));
+  color: var(--dsw-alias-label-primary, var(--dsh-folding-fg));
   font: inherit;
   font-size: 13px;
-  line-height: 1;
+  line-height: 22px;
   text-align: left;
   cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
@@ -86,7 +84,8 @@ button[data-dsh-folding-control]:focus-visible {
   }
 }
 
-nav[aria-label][data-dsh-folding-hidden="true"] {
+/* The control owns the tools heading; the entries behind it are the region. */
+nav[aria-label][data-dsh-folding-hidden="true"] > :not(button[data-dsh-folding-control]) {
   display: none !important;
 }
 
@@ -95,57 +94,6 @@ button[data-dsh-folding-control][data-dsh-folding-column-collapsed="true"] {
   display: none !important;
 }
 `;
-
-function isElement(node) {
-  return !!node && node.nodeType === 1;
-}
-
-function isNewSessionButton(element) {
-  if (!isElement(element) || element.tagName !== 'BUTTON') return false;
-  const label = element.getAttribute('aria-label');
-  return label === NEW_SESSION_LABELS[0] || label === NEW_SESSION_LABELS[1];
-}
-
-function isValidSidebarNav(nav) {
-  if (!isElement(nav) || nav.tagName !== 'NAV') return false;
-
-  const navLabel = nav.getAttribute('aria-label');
-  if (navLabel !== '全局面板' && navLabel !== 'Global panels') return false;
-
-  const sidebarRoot = nav.parentElement;
-  if (!sidebarRoot) return false;
-
-  let hasNewSessionButton = false;
-  for (const child of Array.from(sidebarRoot.children)) {
-    if (isNewSessionButton(child)) {
-      hasNewSessionButton = true;
-      break;
-    }
-  }
-  if (!hasNewSessionButton) return false;
-
-  const sidebarColumn = sidebarRoot.parentElement;
-  const frame = sidebarColumn ? sidebarColumn.parentElement : null;
-  if (!sidebarColumn || !frame) return false;
-  if (frame.tagName !== 'DIV' || sidebarColumn.tagName !== 'DIV') return false;
-  if (frame.firstElementChild !== sidebarColumn) return false;
-
-  return true;
-}
-
-function getNavItemCount(nav) {
-  let count = 0;
-  for (const child of Array.from(nav.children)) {
-    if (child.tagName === 'BUTTON' && child.hasAttribute('aria-label')) count += 1;
-  }
-  return count;
-}
-
-function isSidebarColumnCollapsed(nav) {
-  const sidebarColumn = nav.parentElement ? nav.parentElement.parentElement : null;
-  const frame = sidebarColumn ? sidebarColumn.parentElement : null;
-  return !!frame && frame.getAttribute('data-sidebar-collapsed') === 'true';
-}
 
 function setAttributeIfChanged(element, name, value) {
   if (element.getAttribute(name) === value) return;
@@ -231,7 +179,7 @@ exports.install = function install(doc, win) {
 
     for (const mutation of mutations) {
       const target = mutation.target;
-      const element = isElement(target) ? target : target && target.parentElement;
+      const element = target && target.nodeType === 1 ? target : (target ? target.parentElement : null);
       if (!element) continue;
       if (element === style || element.contains(style)) continue;
       if (typeof element.closest === 'function' && element.closest('[' + CONTROL_ATTR + ']')) continue;
@@ -277,12 +225,21 @@ exports.install = function install(doc, win) {
     if (current !== null) nav.removeAttribute(HIDDEN_ATTR);
   }
 
-  function updateRecord(record) {
+  function getNavItemCount(nav, control) {
+    let count = 0;
+    for (const child of Array.from(nav.children)) {
+      if (child !== control) count += 1;
+    }
+    return count;
+  }
+
+  function updateRecord(record, rail) {
     const nav = record.nav;
     const control = record.control;
 
     record.english = nav.getAttribute('aria-label') === 'Global panels';
-    record.count = getNavItemCount(nav);
+    record.count = getNavItemCount(nav, control);
+    record.columnCollapsed = rail;
 
     const expanded = !collapsed;
     const labelText = record.english ? 'Tools' : '功能区';
@@ -299,8 +256,6 @@ exports.install = function install(doc, win) {
     setAttributeIfChanged(control, 'aria-controls', ensureNavId(nav, record));
     setAttributeIfChanged(control, 'title', titleText);
     setAttributeIfChanged(control, EMPTY_ATTR, record.count > 0 ? 'false' : 'true');
-
-    record.columnCollapsed = isSidebarColumnCollapsed(nav);
     setAttributeIfChanged(control, COLUMN_COLLAPSED_ATTR, record.columnCollapsed ? 'true' : 'false');
 
     applyNavVisibility(nav, record, record.count);
@@ -350,11 +305,20 @@ exports.install = function install(doc, win) {
     };
     control.addEventListener('click', record.onClick);
 
-    if (nav.parentElement) {
-      nav.parentElement.insertBefore(control, nav);
-    }
+    // The heading belongs to the entries it folds, so it lives in the navigation
+    // itself; DSH renders that list as a plain flex column.
+    mountControl(record);
 
     return record;
+  }
+
+  function mountControl(record) {
+    const nav = record.nav;
+    const control = record.control;
+    if (nav.firstElementChild === control) return;
+    if (typeof nav.insertBefore === 'function') {
+      nav.insertBefore(control, nav.firstElementChild);
+    }
   }
 
   function restoreNavAttributes(nav, record) {
@@ -390,14 +354,14 @@ exports.install = function install(doc, win) {
     restoreNavAttributes(record.nav, record);
   }
 
-  function updateAllStates() {
+  function updateAllStates(rail) {
     for (const record of instances.values()) {
-      updateRecord(record);
+      updateRecord(record, rail);
     }
   }
 
   function moveFocusOutOfNav(active) {
-    if (!isElement(active)) return;
+    if (!active || active.nodeType !== 1) return;
 
     for (const record of instances.values()) {
       if (record.nav.contains(active)) {
@@ -424,7 +388,7 @@ exports.install = function install(doc, win) {
     }
 
     const active = doc.activeElement;
-    updateAllStates();
+    updateAllStates(isSidebarRailMode(doc));
     if (collapsed) moveFocusOutOfNav(active);
   }
 
@@ -441,27 +405,25 @@ exports.install = function install(doc, win) {
     if (disposed) return;
 
     for (const [nav, record] of Array.from(instances.entries())) {
-      if (!nav.isConnected || !record.control.isConnected || !isValidSidebarNav(nav)) {
+      if (!nav.isConnected || !record.control.isConnected || !findSidebarRootForNav(nav)) {
         removeRecord(record);
         instances.delete(nav);
       }
     }
 
-    for (const nav of Array.from(doc.querySelectorAll(NAV_SELECTOR))) {
-      if (!isValidSidebarNav(nav)) continue;
+    const rail = isSidebarRailMode(doc);
+    for (const nav of findSidebarNavs(doc)) {
+      if (!findSidebarRootForNav(nav)) continue;
 
       let record = instances.get(nav);
       if (!record) {
         record = createRecord(nav);
         instances.set(nav, record);
-      } else if (
-        nav.parentElement &&
-        (record.control.parentNode !== nav.parentElement || nav.previousElementSibling !== record.control)
-      ) {
-        nav.parentElement.insertBefore(record.control, nav);
+      } else {
+        mountControl(record);
       }
 
-      updateRecord(record);
+      updateRecord(record, rail);
     }
 
     if (collapsed) moveFocusOutOfNav(doc.activeElement);
